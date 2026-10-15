@@ -1,4 +1,4 @@
-# Tusk 🐘
+# Tusk
 
 Full-stack Rust web app for single-sided flashcard recall (text notes, audio, video, images), stored directly in Google Drive.
 

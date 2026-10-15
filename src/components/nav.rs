@@ -24,7 +24,6 @@ pub fn Nav() -> impl IntoView {
             <div class="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div class="flex items-center gap-6">
                     <A href="/" class="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white hover:text-teal-400 transition">
-                        <span class="text-2xl">"🐘"</span>
                         <span>"Tusk"</span>
                     </A>
                     <nav class="hidden md:flex items-center gap-1 text-sm font-medium text-slate-300">

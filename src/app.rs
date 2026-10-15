@@ -14,7 +14,7 @@ pub fn App() -> impl IntoView {
     view! {
         <Stylesheet id="leptos" href="/pkg/tusk.css"/>
         <Link rel="icon" href="/favicon.ico"/>
-        <Title text="Tusk 🐘"/>
+        <Title text="Tusk"/>
         <Meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
         <Router>

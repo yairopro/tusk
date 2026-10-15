@@ -64,7 +64,7 @@ async fn main() {
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    tracing::info!("🐘 Tusk listening on http://{}", addr);
+    tracing::info!("Tusk listening on http://{}", addr);
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();

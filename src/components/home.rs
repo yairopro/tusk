@@ -43,7 +43,6 @@ pub fn HomePage() -> impl IntoView {
                     if !is_authed {
                         view! {
                             <div class="text-center py-20 px-4 rounded-2xl bg-slate-900/40 border border-slate-800">
-                                <span class="text-6xl mb-4 inline-block">"🐘"</span>
                                 <h1 class="text-3xl font-extrabold text-white tracking-tight mb-3">
                                     "Serendipitous Recall with Tusk"
                                 </h1>
