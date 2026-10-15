@@ -1,11 +1,4 @@
 use leptos::*;
-use wasm_bindgen::prelude::*;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = window)]
-    fn initGooglePicker(api_key: &str, client_id: &str);
-}
 
 #[component]
 pub fn FolderPicker(

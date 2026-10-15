@@ -30,7 +30,12 @@ async fn main() {
     padded[..len].copy_from_slice(&key_bytes[..len]);
     let key = Key::from(&padded);
 
-    let site_root = &leptos_options.site_root.to_string();
+    let site_root = leptos_options.site_root.to_string();
+
+    let app_state = AppState {
+        leptos_options,
+        cookie_key: key,
+    };
 
     let app = Router::new()
         // Auth routes
@@ -40,17 +45,23 @@ async fn main() {
         // API routes
         .route("/api/auth/status", get(auth_status_handler))
         .route("/api/cards", get(list_cards_handler))
-        .route("/api/cards/:card_id", get(get_card_handler))
-        .route("/api/cards/save", post(save_card_handler))
+        .route("/api/cards/:card_id", get(get_card_handler).delete(delete_card_handler))
+        .route("/api/cards/save", post(save_text_card_handler))
+        .route("/api/cards/upload", post(upload_media_card_handler))
         .route("/api/folder/select", post(select_folder_handler))
-        .route("/api/media/:folder_id/*filepath", get(media_proxy_handler))
+        .route("/api/media/file/:file_id", get(media_proxy_handler))
         // Leptos routes
-        .leptos_routes(&leptos_options, routes, App)
+        .leptos_routes_with_context(
+            &app_state,
+            routes,
+            {
+                let app_state = app_state.clone();
+                move || provide_context(app_state.clone())
+            },
+            App,
+        )
         .fallback_service(ServeDir::new(site_root))
-        .with_state(AppState {
-            leptos_options,
-            cookie_key: key,
-        });
+        .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     tracing::info!("🐘 Tusk listening on http://{}", addr);

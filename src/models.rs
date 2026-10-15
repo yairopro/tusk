@@ -1,31 +1,63 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct Frontmatter {
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub tags: Option<Vec<String>>,
-    #[serde(default)]
-    pub created: Option<String>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CardType {
+    Text,
+    Audio,
+    Video,
+    Image,
+}
+
+impl CardType {
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "md" => Some(CardType::Text),
+            "mp3" | "wav" | "ogg" | "m4a" | "aac" => Some(CardType::Audio),
+            "mp4" | "webm" | "mov" | "mkv" => Some(CardType::Video),
+            "png" | "jpg" | "jpeg" | "webp" | "gif" | "svg" => Some(CardType::Image),
+            _ => None,
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            CardType::Text => "📝",
+            CardType::Audio => "🎵",
+            CardType::Video => "🎬",
+            CardType::Image => "🖼️",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            CardType::Text => "Text Note",
+            CardType::Audio => "Audio",
+            CardType::Video => "Video",
+            CardType::Image => "Image",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
-    pub id: String,
-    pub name: String,
-    pub title: String,
-    pub tags: Vec<String>,
-    pub question: String,
-    pub answer: String,
+    pub id: String,          // Folder ID
+    pub name: String,        // Folder name (card title)
+    pub title: String,       // Folder name
+    pub card_type: CardType,
+    pub file_id: String,     // index.<ext> file id
+    pub filename: String,    // e.g. "index.md" or "index.mp3"
+    pub content: String,     // Text markdown if Text, or media URL if Media
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardSummary {
-    pub id: String,
-    pub name: String,
-    pub title: String,
-    pub tags: Vec<String>,
+    pub id: String,          // Folder ID
+    pub name: String,        // Folder name
+    pub title: String,       // Folder name
+    pub card_type: CardType,
+    pub file_id: String,     // index.<ext> file id
+    pub filename: String,    // e.g. "index.md"
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,114 +86,8 @@ pub struct DriveFileListResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SaveCardRequest {
-    pub card_id: Option<String>,
-    pub name: String,
+pub struct SaveTextCardRequest {
+    pub folder_id: Option<String>,
     pub title: String,
-    pub tags: Vec<String>,
-    pub question: String,
-    pub answer: String,
-}
-
-impl Card {
-    pub fn parse_markdown(id: String, name: String, raw_content: &str) -> Self {
-        let trimmed = raw_content.trim();
-        let (frontmatter, body) = if trimmed.starts_with("---") {
-            let rest = &trimmed[3..];
-            if let Some(end_idx) = rest.find("\n---") {
-                let fm_str = &rest[..end_idx];
-                let body_str = rest[end_idx + 4..].trim_start_matches(['\r', '\n']);
-                let fm: Frontmatter = serde_yaml::from_str(fm_str).unwrap_or_default();
-                (fm, body_str)
-            } else {
-                (Frontmatter::default(), trimmed)
-            }
-        } else {
-            (Frontmatter::default(), trimmed)
-        };
-
-        let (question, answer) = if let Some(sep_idx) = body.find("\n---") {
-            let q = body[..sep_idx].trim();
-            let a = body[sep_idx + 4..].trim_start_matches(['\r', '\n']).trim();
-            (q.to_string(), a.to_string())
-        } else {
-            (body.to_string(), String::new())
-        };
-
-        let default_name = name.trim_end_matches(".md").to_string();
-        let title = frontmatter
-            .title
-            .unwrap_or_else(|| default_name.clone());
-        let tags = frontmatter.tags.unwrap_or_default();
-
-        Card {
-            id,
-            name: default_name,
-            title,
-            tags,
-            question,
-            answer,
-        }
-    }
-
-    pub fn to_markdown(&self) -> String {
-        let fm = Frontmatter {
-            title: Some(self.title.clone()),
-            tags: Some(self.tags.clone()),
-            created: Some(chrono::Utc::now().to_rfc3339()),
-        };
-        let fm_yaml = serde_yaml::to_string(&fm).unwrap_or_default();
-        format!(
-            "---\n{}---\n{}\n---\n{}\n",
-            fm_yaml,
-            self.question.trim(),
-            self.answer.trim()
-        )
-    }
-
-    pub fn rewrite_media_urls(&mut self, folder_id: &str) {
-        self.question = rewrite_urls(&self.question, folder_id);
-        self.answer = rewrite_urls(&self.answer, folder_id);
-    }
-}
-
-fn rewrite_urls(text: &str, folder_id: &str) -> String {
-    let mut result = text.to_string();
-    let prefixes = ["![", "<img src=\"", "<source src=\"", "<audio src=\"", "<video src=\""];
-    for prefix in prefixes {
-        let mut search_from = 0;
-        while let Some(start_idx) = result[search_from..].find(prefix) {
-            let abs_start = search_from + start_idx + prefix.len();
-            let end_char = if prefix.ends_with('"') { '"' } else { ')' };
-            let inner_start = if prefix == "![" {
-                if let Some(bracket_end) = result[abs_start..].find("](") {
-                    abs_start + bracket_end + 2
-                } else {
-                    search_from = abs_start;
-                    continue;
-                }
-            } else {
-                abs_start
-            };
-
-            if let Some(end_rel) = result[inner_start..].find(end_char) {
-                let url = &result[inner_start..inner_start + end_rel];
-                if !url.starts_with("http://")
-                    && !url.starts_with("https://")
-                    && !url.starts_with("/api/media/")
-                    && !url.starts_with("data:")
-                {
-                    let filename = url.trim_start_matches("./");
-                    let replacement = format!("/api/media/{}/{}", folder_id, filename);
-                    result.replace_range(inner_start..inner_start + end_rel, &replacement);
-                    search_from = inner_start + replacement.len() + 1;
-                } else {
-                    search_from = inner_start + end_rel + 1;
-                }
-            } else {
-                break;
-            }
-        }
-    }
-    result
+    pub content: String,
 }

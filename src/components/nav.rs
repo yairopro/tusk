@@ -6,7 +6,7 @@ use crate::models::AuthStatus;
 
 #[component]
 pub fn Nav() -> impl IntoView {
-    let auth_status = create_resource(
+    let auth_status = create_local_resource(
         || (),
         |_| async move {
             gloo_net::http::Request::get("/api/auth/status")
@@ -58,6 +58,7 @@ pub fn Nav() -> impl IntoView {
                                                 />
                                                 <a
                                                     href="/api/auth/logout"
+                                                    rel="external"
                                                     class="text-xs text-slate-400 hover:text-rose-400 transition px-2 py-1"
                                                 >
                                                     "Sign Out"
@@ -69,6 +70,7 @@ pub fn Nav() -> impl IntoView {
                                         view! {
                                             <a
                                                 href="/api/auth/login"
+                                                rel="external"
                                                 class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-950 bg-teal-400 hover:bg-teal-300 rounded-lg shadow-sm transition"
                                             >
                                                 <span>"Sign in with Google"</span>

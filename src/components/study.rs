@@ -1,7 +1,7 @@
 use leptos::*;
 use rand::seq::SliceRandom;
 
-use crate::models::{Card, CardSummary};
+use crate::models::{Card, CardSummary, CardType};
 
 fn render_markdown(md: &str) -> String {
     let mut options = pulldown_cmark::Options::empty();
@@ -15,7 +15,7 @@ fn render_markdown(md: &str) -> String {
 
 #[component]
 pub fn StudyPage() -> impl IntoView {
-    let card_summaries = create_resource(
+    let card_summaries = create_local_resource(
         || (),
         |_| async move {
             let resp = gloo_net::http::Request::get("/api/cards").send().await.ok()?;
@@ -28,7 +28,6 @@ pub fn StudyPage() -> impl IntoView {
     );
 
     let (current_card_id, set_current_card_id) = create_signal(Option::<String>::None);
-    let (is_flipped, set_is_flipped) = create_signal(false);
 
     // Pick initial random card when summaries load
     create_effect(move |_| {
@@ -60,9 +59,7 @@ pub fn StudyPage() -> impl IntoView {
     let pick_next_card = move || {
         if let Some(Some(summaries)) = card_summaries.get() {
             if !summaries.is_empty() {
-                set_is_flipped.set(false);
                 let mut rng = rand::thread_rng();
-                // Pure random with replacement as designed
                 if let Some(picked) = summaries.choose(&mut rng) {
                     set_current_card_id.set(Some(picked.id.clone()));
                 }
@@ -71,11 +68,11 @@ pub fn StudyPage() -> impl IntoView {
     };
 
     view! {
-        <div class="max-w-2xl mx-auto space-y-6">
+        <div class="max-w-3xl mx-auto space-y-6">
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-xl font-bold text-white tracking-tight">"Recall Session"</h1>
-                    <p class="text-xs text-slate-400">"Pure random draws from your Drive collection"</p>
+                    <p class="text-xs text-slate-400">"Single-sided review from your Google Drive deck"</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button
@@ -91,72 +88,60 @@ pub fn StudyPage() -> impl IntoView {
                 {move || {
                     match active_card.get() {
                         Some(Some(card)) => {
-                            let q_html = render_markdown(&card.question);
-                            let a_html = render_markdown(&card.answer);
+                            let icon = card.card_type.icon();
+                            let label = card.card_type.label();
+                            let card_content = card.content.clone();
+                            let ctype = card.card_type;
 
                             view! {
                                 <div class="space-y-4">
-                                    // Card title & tags
-                                    <div class="flex items-center justify-between text-xs text-slate-400 px-1">
-                                        <span class="font-semibold text-slate-300">{card.title.clone()}</span>
-                                        <div class="flex items-center gap-1 font-mono">
-                                            {card.tags.iter().map(|tag| view! {
-                                                <span class="bg-slate-800/80 px-2 py-0.5 rounded text-teal-400 text-[10px]">
-                                                    {format!("#{}", tag)}
+                                    <div class="p-6 md:p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl flex flex-col justify-between">
+                                        <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-800 text-xs text-slate-400">
+                                            <div class="flex items-center gap-2">
+                                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-xs font-medium text-slate-300">
+                                                    <span>{icon}</span>
+                                                    <span>{label}</span>
                                                 </span>
-                                            }).collect_view()}
+                                                <span class="font-semibold text-slate-200 text-base">{card.title.clone()}</span>
+                                            </div>
+                                            <span class="font-mono text-slate-500 text-[11px]">{card.filename.clone()}</span>
                                         </div>
-                                    </div>
 
-                                    // Interactive Flashcard Box
-                                    <div
-                                        on:click=move |_| set_is_flipped.update(|f| *f = !*f)
-                                        class="cursor-pointer min-h-[380px] p-8 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition shadow-2xl flex flex-col justify-between select-none relative group"
-                                    >
-                                        <div class="prose prose-invert max-w-none">
-                                            {move || {
-                                                if is_flipped.get() {
+                                        <div class="py-4">
+                                            {match ctype {
+                                                CardType::Text => {
+                                                    let html = render_markdown(&card_content);
                                                     view! {
-                                                        <div>
-                                                            <div class="text-[11px] font-mono uppercase tracking-wider text-teal-400 mb-4 pb-2 border-b border-slate-800 flex items-center justify-between">
-                                                                <span>"Answer"</span>
-                                                                <span class="text-slate-500 text-[10px]">"Click to see question"</span>
-                                                            </div>
-                                                            <div class="text-slate-200 text-base leading-relaxed" inner_html=a_html.clone() />
+                                                        <div class="prose prose-invert max-w-none text-slate-100 text-base leading-relaxed" inner_html=html />
+                                                    }.into_view()
+                                                }
+                                                CardType::Audio => {
+                                                    view! {
+                                                        <div class="flex flex-col items-center justify-center py-8 px-4 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                                                            <div class="text-4xl mb-4">"🎵"</div>
+                                                            <audio controls=true class="w-full max-w-md" src=card_content />
                                                         </div>
                                                     }.into_view()
-                                                } else {
+                                                }
+                                                CardType::Video => {
                                                     view! {
-                                                        <div>
-                                                            <div class="text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-4 pb-2 border-b border-slate-800 flex items-center justify-between">
-                                                                <span>"Question"</span>
-                                                                <span class="text-slate-500 text-[10px]">"Click to reveal answer"</span>
-                                                            </div>
-                                                            <div class="text-slate-100 text-lg font-medium leading-relaxed" inner_html=q_html.clone() />
+                                                        <div class="flex justify-center bg-black rounded-xl overflow-hidden border border-slate-800">
+                                                            <video controls=true class="w-full max-h-[60vh]" src=card_content />
+                                                        </div>
+                                                    }.into_view()
+                                                }
+                                                CardType::Image => {
+                                                    view! {
+                                                        <div class="flex justify-center py-2 bg-slate-950/40 rounded-xl border border-slate-800/60">
+                                                            <img src=card_content alt=card.title.clone() class="max-w-full max-h-[60vh] rounded-lg object-contain" />
                                                         </div>
                                                     }.into_view()
                                                 }
                                             }}
                                         </div>
-
-                                        <div class="mt-6 pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
-                                            <span>
-                                                {move || if is_flipped.get() { "Showing Answer" } else { "Showing Question" }}
-                                            </span>
-                                            <span class="group-hover:text-slate-300 transition">
-                                                "Click to flip 🔄"
-                                            </span>
-                                        </div>
                                     </div>
 
-                                    // Action buttons
                                     <div class="flex items-center justify-center gap-4 pt-2">
-                                        <button
-                                            on:click=move |_| set_is_flipped.update(|f| *f = !*f)
-                                            class="px-5 py-2.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-                                        >
-                                            {move || if is_flipped.get() { "Show Question" } else { "Reveal Answer" }}
-                                        </button>
                                         <button
                                             on:click=move |_| pick_next_card()
                                             class="px-6 py-2.5 text-xs font-bold rounded-xl bg-teal-400 hover:bg-teal-300 text-slate-950 transition shadow-md shadow-teal-500/10"

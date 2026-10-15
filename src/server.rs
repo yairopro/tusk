@@ -6,7 +6,7 @@ mod ssr {
     use axum::{
         body::Body,
         extract::{Path, State},
-        http::{header, StatusCode},
+        http::{header, HeaderMap, HeaderValue, StatusCode},
         response::{IntoResponse, Json},
     };
     use axum_extra::extract::cookie::{Key, PrivateCookieJar};
@@ -63,18 +63,17 @@ mod ssr {
         jar: PrivateCookieJar,
     ) -> Result<impl IntoResponse, (StatusCode, String)> {
         let mut session = get_session(&jar)?;
-        let folder_id = session
-            .selected_folder_id
-            .as_ref()
-            .ok_or_else(|| (StatusCode::BAD_REQUEST, "No folder selected".to_string()))?
-            .clone();
+        let folder_id = match &session.selected_folder_id {
+            Some(f) => f.clone(),
+            None => return Ok(Json(Vec::<CardSummary>::new())),
+        };
 
         let access_token = ensure_valid_access_token(&mut session)
             .await
             .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
 
         let client = Client::new();
-        let cards = list_markdown_files(&client, &access_token, &folder_id)
+        let cards = list_flashcard_folders(&client, &access_token, &folder_id)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -86,30 +85,24 @@ mod ssr {
         Path(card_id): Path<String>,
     ) -> Result<impl IntoResponse, (StatusCode, String)> {
         let mut session = get_session(&jar)?;
-        let folder_id = session
-            .selected_folder_id
-            .as_ref()
-            .ok_or_else(|| (StatusCode::BAD_REQUEST, "No folder selected".to_string()))?
-            .clone();
-
         let access_token = ensure_valid_access_token(&mut session)
             .await
             .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
 
         let client = Client::new();
-        let card = get_card_content(&client, &access_token, &card_id, &card_id, &folder_id)
+        let card = get_card(&client, &access_token, &card_id)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
         Ok(Json(card))
     }
 
-    pub async fn save_card_handler(
+    pub async fn save_text_card_handler(
         jar: PrivateCookieJar,
-        Json(req): Json<SaveCardRequest>,
+        Json(req): Json<SaveTextCardRequest>,
     ) -> Result<(PrivateCookieJar, impl IntoResponse), (StatusCode, String)> {
         let mut session = get_session(&jar)?;
-        let folder_id = session
+        let deck_folder_id = session
             .selected_folder_id
             .as_ref()
             .ok_or_else(|| (StatusCode::BAD_REQUEST, "No folder selected".to_string()))?
@@ -119,22 +112,14 @@ mod ssr {
             .await
             .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
 
-        let card = Card {
-            id: req.card_id.clone().unwrap_or_default(),
-            name: req.name.clone(),
-            title: req.title,
-            tags: req.tags,
-            question: req.question,
-            answer: req.answer,
-        };
-
         let client = Client::new();
-        let saved_id = save_card_file(
+        let saved_id = save_text_card(
             &client,
             &access_token,
-            &folder_id,
-            req.card_id.as_deref(),
-            &card,
+            &deck_folder_id,
+            req.folder_id.as_deref(),
+            &req.title,
+            &req.content,
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -143,6 +128,109 @@ mod ssr {
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
         Ok((jar, Json(serde_json::json!({ "id": saved_id }))))
+    }
+
+    pub async fn upload_media_card_handler(
+        jar: PrivateCookieJar,
+        mut multipart: axum::extract::Multipart,
+    ) -> Result<(PrivateCookieJar, impl IntoResponse), (StatusCode, String)> {
+        let mut session = get_session(&jar)?;
+        let deck_folder_id = session
+            .selected_folder_id
+            .as_ref()
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, "No folder selected".to_string()))?
+            .clone();
+
+        let access_token = ensure_valid_access_token(&mut session)
+            .await
+            .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+
+        let mut folder_id: Option<String> = None;
+        let mut title = String::new();
+        let mut filename = String::new();
+        let mut mime_type = String::from("application/octet-stream");
+        let mut file_bytes = Vec::new();
+
+        while let Some(field) = multipart
+            .next_field()
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        {
+            let name = field.name().unwrap_or("").to_string();
+            match name.as_str() {
+                "folder_id" => {
+                    let val = field.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                    if !val.is_empty() {
+                        folder_id = Some(val);
+                    }
+                }
+                "title" => {
+                    title = field.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                }
+                "file" => {
+                    if let Some(fname) = field.file_name() {
+                        filename = fname.to_string();
+                    }
+                    if let Some(content_type) = field.content_type() {
+                        mime_type = content_type.to_string();
+                    }
+                    file_bytes = field
+                        .bytes()
+                        .await
+                        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+                        .to_vec();
+                }
+                _ => {}
+            }
+        }
+
+        if title.trim().is_empty() {
+            title = filename
+                .split('.')
+                .next()
+                .unwrap_or("media-card")
+                .to_string();
+        }
+
+        if file_bytes.is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "No file uploaded".to_string()));
+        }
+
+        let client = Client::new();
+        let saved_folder_id = save_media_card(
+            &client,
+            &access_token,
+            &deck_folder_id,
+            folder_id.as_deref(),
+            &title,
+            &filename,
+            &mime_type,
+            &file_bytes,
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        let jar = save_session_to_jar(jar, &session)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        Ok((jar, Json(serde_json::json!({ "id": saved_folder_id }))))
+    }
+
+    pub async fn delete_card_handler(
+        jar: PrivateCookieJar,
+        Path(card_id): Path<String>,
+    ) -> Result<impl IntoResponse, (StatusCode, String)> {
+        let mut session = get_session(&jar)?;
+        let access_token = ensure_valid_access_token(&mut session)
+            .await
+            .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+
+        let client = Client::new();
+        delete_card_folder(&client, &access_token, &card_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        Ok(Json(serde_json::json!({ "ok": true })))
     }
 
     #[derive(Deserialize)]
@@ -167,34 +255,56 @@ mod ssr {
 
     pub async fn media_proxy_handler(
         jar: PrivateCookieJar,
-        Path((folder_id, filepath)): Path<(String, String)>,
+        Path(file_id): Path<String>,
+        headers: HeaderMap,
     ) -> Result<impl IntoResponse, (StatusCode, String)> {
         let mut session = get_session(&jar)?;
         let access_token = ensure_valid_access_token(&mut session)
             .await
             .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
 
-        let filename = filepath.split('/').last().unwrap_or(&filepath);
+        let range_header = headers
+            .get(header::RANGE)
+            .and_then(|h| h.to_str().ok());
+
         let client = Client::new();
-        let (mime_type, response) =
-            fetch_media_stream(&client, &access_token, &folder_id, filename)
+        let (mime_type, content_range, content_length, media_res) =
+            fetch_media_by_id(&client, &access_token, &file_id, range_header)
                 .await
                 .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let status = if content_range.is_some() {
+            StatusCode::PARTIAL_CONTENT
+        } else {
+            StatusCode::OK
+        };
 
-        Ok((
-            [
-                (header::CONTENT_TYPE, mime_type),
-                (
-                    header::CACHE_CONTROL,
-                    "public, max-age=3600".to_string(),
-                ),
-            ],
-            bytes,
-        ))
+        let mut res_headers = HeaderMap::new();
+        res_headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_str(&mime_type)
+                .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+        );
+        res_headers.insert(
+            header::ACCEPT_RANGES,
+            HeaderValue::from_static("bytes"),
+        );
+        res_headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, max-age=3600"),
+        );
+        if let Some(range_val) = content_range {
+            if let Ok(val) = HeaderValue::from_str(&range_val) {
+                res_headers.insert(header::CONTENT_RANGE, val);
+            }
+        }
+        if let Some(len_val) = content_length {
+            if let Ok(val) = HeaderValue::from_str(&len_val) {
+                res_headers.insert(header::CONTENT_LENGTH, val);
+            }
+        }
+
+        let body = Body::from_stream(media_res.bytes_stream());
+        Ok((status, res_headers, body))
     }
 }

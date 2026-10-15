@@ -5,7 +5,7 @@ use crate::models::{AuthStatus, CardSummary};
 
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let auth_res = create_resource(
+    let auth_res = create_local_resource(
         || (),
         |_| async move {
             gloo_net::http::Request::get("/api/auth/status")
@@ -20,7 +20,7 @@ pub fn HomePage() -> impl IntoView {
 
     let (sync_trigger, set_sync_trigger) = create_signal(0);
 
-    let cards_res = create_resource(
+    let cards_res = create_local_resource(
         move || sync_trigger.get(),
         |_| async move {
             let resp = gloo_net::http::Request::get("/api/cards").send().await.ok()?;
@@ -52,6 +52,7 @@ pub fn HomePage() -> impl IntoView {
                                 </p>
                                 <a
                                     href="/api/auth/login"
+                                    rel="external"
                                     class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-400 hover:bg-teal-300 text-slate-950 font-bold transition shadow-lg shadow-teal-500/10"
                                 >
                                     "Connect Google Drive"
@@ -110,26 +111,23 @@ pub fn HomePage() -> impl IntoView {
                                                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                                                 {cards.into_iter().map(|card| {
                                                                     let edit_url = format!("/editor/{}", card.id);
+                                                                    let icon = card.card_type.icon();
+                                                                    let type_label = card.card_type.label();
                                                                     view! {
                                                                         <div class="p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between group">
                                                                             <div>
+                                                                                <div class="flex items-center justify-between mb-2">
+                                                                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-xs font-medium text-slate-300">
+                                                                                        <span>{icon}</span>
+                                                                                        <span>{type_label}</span>
+                                                                                    </span>
+                                                                                    <span class="text-xs text-slate-500 font-mono">{card.filename}</span>
+                                                                                </div>
                                                                                 <h3 class="text-base font-semibold text-slate-200 group-hover:text-teal-300 transition line-clamp-2">
                                                                                     {card.title}
                                                                                 </h3>
-                                                                                <div class="text-xs text-slate-500 font-mono mt-1">
-                                                                                    {card.name}
-                                                                                </div>
                                                                             </div>
-                                                                            <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                                                                                <div class="flex items-center gap-1.5 flex-wrap">
-                                                                                    {card.tags.into_iter().map(|tag| {
-                                                                                        view! {
-                                                                                            <span class="bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
-                                                                                                {format!("#{}", tag)}
-                                                                                            </span>
-                                                                                        }
-                                                                                    }).collect_view()}
-                                                                                </div>
+                                                                            <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-end text-xs">
                                                                                 <A
                                                                                     href=edit_url
                                                                                     class="text-teal-400 hover:text-teal-300 font-medium"
