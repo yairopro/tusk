@@ -2,7 +2,6 @@
 #[tokio::main]
 async fn main() {
     use axum::{
-        extract::Path,
         routing::{get, post},
         Router,
     };
@@ -44,6 +43,8 @@ async fn main() {
         .route("/api/auth/callback", get(tusk::auth::ssr::callback_handler))
         // API routes
         .route("/api/auth/status", get(auth_status_handler))
+        .route("/api/folders", get(list_folders_handler))
+        .route("/api/folders/create", post(create_folder_handler))
         .route("/api/cards", get(list_cards_handler))
         .route("/api/cards/:card_id", get(get_card_handler).delete(delete_card_handler))
         .route("/api/cards/save", post(save_text_card_handler))

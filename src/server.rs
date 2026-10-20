@@ -5,7 +5,7 @@ pub use ssr::*;
 mod ssr {
     use axum::{
         body::Body,
-        extract::{Path, State},
+        extract::Path,
         http::{header, HeaderMap, HeaderValue, StatusCode},
         response::{IntoResponse, Json},
     };
@@ -237,6 +237,46 @@ mod ssr {
     pub struct SelectFolderRequest {
         pub folder_id: String,
         pub folder_name: String,
+    }
+
+    #[derive(Deserialize)]
+    pub struct ListFoldersQuery {
+        pub parent_id: Option<String>,
+    }
+
+    pub async fn list_folders_handler(
+        jar: PrivateCookieJar,
+        axum::extract::Query(query): axum::extract::Query<ListFoldersQuery>,
+    ) -> Result<impl IntoResponse, (StatusCode, String)> {
+        let mut session = get_session(&jar)?;
+        let access_token = ensure_valid_access_token(&mut session)
+            .await
+            .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+
+        let client = Client::new();
+        let parent = query.parent_id.as_deref().unwrap_or("root");
+        let folders = list_folders(&client, &access_token, parent)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        Ok(Json(folders))
+    }
+
+    pub async fn create_folder_handler(
+        jar: PrivateCookieJar,
+        Json(req): Json<CreateFolderRequest>,
+    ) -> Result<impl IntoResponse, (StatusCode, String)> {
+        let mut session = get_session(&jar)?;
+        let access_token = ensure_valid_access_token(&mut session)
+            .await
+            .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+
+        let client = Client::new();
+        let folder = create_subfolder(&client, &access_token, req.parent_id.as_deref(), &req.name)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+        Ok(Json(folder))
     }
 
     pub async fn select_folder_handler(

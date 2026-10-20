@@ -91,3 +91,15 @@ pub struct SaveTextCardRequest {
     pub title: String,
     pub content: String,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderItem {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateFolderRequest {
+    pub parent_id: Option<String>,
+    pub name: String,
+}

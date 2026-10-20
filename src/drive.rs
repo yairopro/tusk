@@ -451,6 +451,64 @@ pub mod ssr {
         Ok(id.to_string())
     }
 
+    /// List subfolders inside a specific parent folder ("root" or folder id)
+    pub async fn list_folders(
+        client: &Client,
+        access_token: &str,
+        parent_id: &str,
+    ) -> Result<Vec<crate::models::FolderItem>, String> {
+        let parent = if parent_id.trim().is_empty() {
+            "root"
+        } else {
+            parent_id
+        };
+        let query = format!(
+            "'{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            parent.replace('\'', "\\'")
+        );
+        let url = format!(
+            "https://www.googleapis.com/drive/v3/files?q={}&fields=files(id,name)&orderBy=name&pageSize=1000",
+            urlencoding::encode(&query)
+        );
+
+        let res = client
+            .get(&url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            let err = res.text().await.unwrap_or_default();
+            return Err(format!("Drive API list folders error: {}", err));
+        }
+
+        let folder_list: DriveFileListResponse = res.json().await.map_err(|e| e.to_string())?;
+        Ok(folder_list
+            .files
+            .into_iter()
+            .map(|f| crate::models::FolderItem {
+                id: f.id,
+                name: f.name,
+            })
+            .collect())
+    }
+
+    /// Create a new folder under a parent
+    pub async fn create_subfolder(
+        client: &Client,
+        access_token: &str,
+        parent_id: Option<&str>,
+        name: &str,
+    ) -> Result<crate::models::FolderItem, String> {
+        let parent = parent_id.unwrap_or("root");
+        let id = create_folder(client, access_token, parent, name).await?;
+        Ok(crate::models::FolderItem {
+            id,
+            name: name.to_string(),
+        })
+    }
+
     async fn upload_raw_file(
         client: &Client,
         access_token: &str,
