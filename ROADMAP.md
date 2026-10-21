@@ -1,0 +1,2 @@
+- Unable to edit a card 500
+- Once successfully created, should redirect to preview of the card
