@@ -204,13 +204,25 @@ pub fn FolderPicker(
                 <span class="sm:hidden">"Change"</span>
             </button>
 
-            // Modal
+            // Modal / Bottom Sheet
             {move || if is_open.get() {
                 view! {
-                    <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
-                        <div class="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[88vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                    <div class="fixed inset-0 z-[100] flex flex-col justify-end md:justify-center items-center md:p-4 bg-slate-950/80 backdrop-blur-sm">
+                        // Backdrop click dismiss
+                        <div
+                            class="absolute inset-0"
+                            on:click=close_modal
+                        />
+
+                        // Container: bottom sheet on mobile (<md), centered modal on tablet/desktop (>=md)
+                        <div class="relative z-10 w-full md:max-w-xl bg-slate-900 border-t md:border border-slate-800 rounded-t-3xl md:rounded-2xl shadow-2xl flex flex-col max-h-[85vh] md:max-h-[80vh] overflow-hidden">
+                            // Mobile pull handle
+                            <div class="md:hidden flex justify-center pt-2.5 pb-1">
+                                <div class="w-10 h-1 bg-slate-700 rounded-full" />
+                            </div>
+
                             // Header
-                            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                            <div class="px-4 sm:px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
                                 <div>
                                     <h3 class="text-base font-bold text-white flex items-center gap-2">
                                         <span>"📁"</span>
@@ -230,7 +242,7 @@ pub fn FolderPicker(
                             </div>
 
                             // Breadcrumbs navigation
-                            <div class="px-4 sm:px-5 py-2.5 bg-slate-950/40 border-b border-slate-800/80 flex items-center gap-1 text-xs text-slate-400 overflow-x-auto whitespace-nowrap scrollbar-thin">
+                            <div class="px-4 sm:px-5 py-2.5 bg-slate-950/40 border-b border-slate-800/80 flex items-center gap-1 text-xs text-slate-400 overflow-x-auto whitespace-nowrap scrollbar-thin shrink-0">
                                 {move || {
                                     let crumbs = breadcrumbs.get();
                                     let len = crumbs.len();
